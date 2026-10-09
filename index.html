@@ -46,8 +46,17 @@
   .stats { text-align: center; color: var(--muted); font-size: .9rem; margin-top: 16px; }
   .stats b { color: var(--text); }
 
-  form { display: flex; gap: 8px; }
-  form input { flex: 1; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; }
+  form { display: flex; flex-wrap: wrap; gap: 8px; }
+  form input, form select { min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; }
+  form input { flex: 1 1 200px; }
+  form select { flex: 1 1 120px; }
+  .cats { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 999px; padding: 4px 10px; font: inherit; font-size: .8rem; cursor: pointer; }
+  .chip.on { background: var(--text); color: var(--card); border-color: var(--text); }
+  .chip.nueva { color: var(--muted); border-style: dashed; }
+  .chip .x { opacity: .6; padding-left: 2px; }
+  .chip .x:hover { opacity: 1; }
+  li .tag { font-size: .72rem; padding: 2px 8px; border-radius: 999px; background: var(--bg); border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
   form button { background: var(--text); color: var(--card); }
   ul { list-style: none; padding: 0; margin: 14px 0 0; }
   li { display: flex; align-items: center; gap: 10px; padding: 10px 8px; border-radius: 10px; cursor: pointer; }
@@ -90,8 +99,10 @@
   </section>
 
   <section class="card">
+    <div class="cats" id="cats" aria-label="Filtrar por categoría"></div>
     <form id="form">
       <input id="nueva" placeholder="¿En qué vas a trabajar?" autocomplete="off">
+      <select id="cat" aria-label="Categoría"></select>
       <button class="btn">Añadir</button>
     </form>
     <ul id="lista"></ul>
@@ -109,6 +120,8 @@ const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } cat
 
 let tareas = load('pomo.tareas', []);
 let activa = load('pomo.activa', null);
+let categorias = load('pomo.categorias', []);
+let filtro = null; // id de categoría o null = todas
 let stats = load('pomo.stats', { fecha: '', n: 0 });
 const hoyStr = new Date().toDateString();
 if (stats.fecha !== hoyStr) stats = { fecha: hoyStr, n: 0 };
@@ -191,10 +204,69 @@ function avisar(msg) {
 // --- Tareas ---
 function guardarTareas() { save('pomo.tareas', tareas); save('pomo.activa', activa); pintarTareas(); }
 
+// --- Categorías ---
+const nombreCat = id => categorias.find(c => c.id === id)?.nombre;
+
+function guardarCategorias() { save('pomo.categorias', categorias); pintarCategorias(); pintarTareas(); }
+
+function crearCategoria() {
+  const nombre = (prompt('Nombre de la nueva categoría:') || '').trim();
+  if (!nombre) return null;
+  const existente = categorias.find(c => c.nombre.toLowerCase() === nombre.toLowerCase());
+  if (existente) return existente.id;
+  const c = { id: Date.now(), nombre };
+  categorias.push(c);
+  guardarCategorias();
+  return c.id;
+}
+
+function borrarCategoria(c) {
+  if (!confirm(`¿Eliminar la categoría "${c.nombre}"? Sus tareas quedarán sin categoría.`)) return;
+  categorias = categorias.filter(x => x.id !== c.id);
+  tareas.forEach(t => { if (t.cat === c.id) t.cat = null; });
+  if (filtro === c.id) filtro = null;
+  save('pomo.tareas', tareas);
+  guardarCategorias();
+}
+
+function pintarCategorias() {
+  const box = $('cats');
+  box.innerHTML = '';
+  const chip = (texto, on, onclick) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip' + (on ? ' on' : ''); b.textContent = texto; b.onclick = onclick;
+    box.append(b); return b;
+  };
+  if (categorias.length) chip('Todas', filtro === null, () => { filtro = null; pintarCategorias(); pintarTareas(); });
+  categorias.forEach(c => {
+    const b = chip(c.nombre, filtro === c.id, () => { filtro = filtro === c.id ? null : c.id; pintarCategorias(); pintarTareas(); });
+    const x = document.createElement('span'); x.className = 'x'; x.textContent = '×'; x.title = 'Eliminar categoría';
+    x.onclick = e => { e.stopPropagation(); borrarCategoria(c); };
+    b.append(x);
+  });
+  chip('＋ Categoría', false, () => { const id = crearCategoria(); if (id) { filtro = id; pintarCategorias(); pintarTareas(); } }).classList.add('nueva');
+
+  // Selector del formulario: por defecto, la categoría filtrada
+  const sel = $('cat');
+  sel.innerHTML = '';
+  const opt = (value, texto) => { const o = document.createElement('option'); o.value = value; o.textContent = texto; sel.append(o); };
+  opt('', 'Sin categoría');
+  categorias.forEach(c => opt(c.id, c.nombre));
+  opt('nueva', '＋ Nueva categoría…');
+  sel.value = filtro ?? '';
+}
+
+$('cat').onchange = () => {
+  if ($('cat').value !== 'nueva') return;
+  const id = crearCategoria();
+  $('cat').value = id ?? '';
+};
+
 function pintarTareas() {
   const ul = $('lista');
   ul.innerHTML = '';
-  tareas.forEach(t => {
+  const visibles = filtro === null ? tareas : tareas.filter(t => t.cat === filtro);
+  visibles.forEach(t => {
     const li = document.createElement('li');
     li.className = (t.hecha ? 'hecha ' : '') + (t.id === activa ? 'activa' : '');
     const cb = document.createElement('input');
@@ -205,17 +277,24 @@ function pintarTareas() {
     const del = document.createElement('button'); del.className = 'del'; del.textContent = '×'; del.title = 'Eliminar';
     del.onclick = e => { e.stopPropagation(); tareas = tareas.filter(x => x.id !== t.id); if (activa === t.id) activa = null; guardarTareas(); pintarReloj(); };
     li.onclick = () => { if (t.hecha) return; activa = activa === t.id ? null : t.id; guardarTareas(); pintarReloj(); };
-    li.append(cb, span, poms, del);
+    li.append(cb, span);
+    if (filtro === null && nombreCat(t.cat)) {
+      const tag = document.createElement('small'); tag.className = 'tag'; tag.textContent = nombreCat(t.cat);
+      li.append(tag);
+    }
+    li.append(poms, del);
     ul.append(li);
   });
-  $('vacio').style.display = tareas.length ? 'none' : 'block';
+  $('vacio').textContent = tareas.length ? 'No hay tareas en esta categoría.' : 'Añade una tarea y haz clic en ella para enfocarte.';
+  $('vacio').style.display = visibles.length ? 'none' : 'block';
 }
 
 $('form').onsubmit = e => {
   e.preventDefault();
   const texto = $('nueva').value.trim();
   if (!texto) return;
-  const t = { id: Date.now(), texto, hecha: false, poms: 0 };
+  const cat = Number($('cat').value) || null;
+  const t = { id: Date.now(), texto, hecha: false, poms: 0, cat };
   tareas.push(t);
   if (!activa) activa = t.id;
   $('nueva').value = '';
@@ -228,11 +307,12 @@ $('reset').onclick = () => setModo(modo);
 $('saltar').onclick = () => { restante = 0; terminar(true); };
 document.querySelectorAll('.modes button').forEach(b => b.onclick = () => setModo(b.dataset.modo));
 document.addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT') return;
+  if (['INPUT', 'SELECT'].includes(e.target.tagName)) return;
   if (e.code === 'Space') { e.preventDefault(); tick ? pausar() : iniciar(); }
   if (e.key === 'r' || e.key === 'R') setModo(modo);
 });
 
+pintarCategorias();
 pintarTareas();
 pintarReloj();
 </script>
