@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pomodoro + Tareas</title>
+<style>
+  :root {
+    --bg: #faf7f2; --card: #ffffff; --text: #2b2622; --muted: #8a8079;
+    --accent: #e0573c; --accent-soft: #fbe3dc; --border: #ece5dc;
+    --break: #3c8f6e; --break-soft: #dcf0e6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1b1917; --card: #25221f; --text: #f1ece6; --muted: #9a9089;
+      --accent: #ff7a5c; --accent-soft: #3a2721; --border: #36312c;
+      --break: #5cc79b; --break-soft: #1f3329; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex; justify-content: center; padding: 32px 16px; }
+  main { width: 100%; max-width: 440px; }
+  h1 { font-size: 1.1rem; font-weight: 600; margin: 0 0 16px; color: var(--muted); letter-spacing: .02em; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; margin-bottom: 16px; }
+
+  .modes { display: flex; gap: 6px; background: var(--bg); padding: 4px; border-radius: 10px; }
+  .modes button { flex: 1; border: 0; background: none; color: var(--muted); padding: 8px; border-radius: 8px; font: inherit; font-size: .9rem; cursor: pointer; }
+  .modes button.on { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+
+  .ring { position: relative; width: 240px; height: 240px; margin: 24px auto 16px; }
+  .ring svg { transform: rotate(-90deg); }
+  .ring circle { fill: none; stroke-width: 10; }
+  .ring .track { stroke: var(--accent-soft); }
+  .ring .prog { stroke: var(--accent); stroke-linecap: round; transition: stroke-dashoffset .3s linear; }
+  body.descanso .ring .track { stroke: var(--break-soft); }
+  body.descanso .ring .prog { stroke: var(--break); }
+  .time { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; }
+  .time b { font-size: 3.4rem; font-weight: 600; font-variant-numeric: tabular-nums; display: block; line-height: 1; }
+  .time small { color: var(--muted); font-size: .85rem; }
+
+  .controls { display: flex; gap: 10px; justify-content: center; }
+  .btn { border: 0; border-radius: 10px; padding: 12px 22px; font: inherit; font-weight: 600; cursor: pointer; }
+  .primary { background: var(--accent); color: #fff; min-width: 130px; }
+  body.descanso .primary { background: var(--break); }
+  .ghost { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+  .stats { text-align: center; color: var(--muted); font-size: .9rem; margin-top: 16px; }
+  .stats b { color: var(--text); }
+
+  form { display: flex; gap: 8px; }
+  form input { flex: 1; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; }
+  form button { background: var(--text); color: var(--card); }
+  ul { list-style: none; padding: 0; margin: 14px 0 0; }
+  li { display: flex; align-items: center; gap: 10px; padding: 10px 8px; border-radius: 10px; cursor: pointer; }
+  li:hover { background: var(--bg); }
+  li.activa { background: var(--accent-soft); }
+  li input { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
+  li span { flex: 1; overflow-wrap: anywhere; }
+  li.hecha span { text-decoration: line-through; color: var(--muted); }
+  li .poms { color: var(--muted); font-size: .8rem; }
+  li .del { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 1.1rem; padding: 0 4px; opacity: 0; }
+  li:hover .del, li:focus-within .del { opacity: 1; }
+  .vacio { color: var(--muted); font-size: .9rem; text-align: center; margin: 14px 0 0; }
+  .hint { color: var(--muted); font-size: .8rem; text-align: center; margin-top: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🍅 Pomodoro + Tareas</h1>
+
+  <section class="card">
+    <div class="modes" role="tablist">
+      <button data-modo="foco" class="on">Foco 25</button>
+      <button data-modo="corto">Pausa 5</button>
+      <button data-modo="largo">Pausa 15</button>
+    </div>
+    <div class="ring">
+      <svg width="240" height="240" viewBox="0 0 240 240">
+        <circle class="track" cx="120" cy="120" r="110"/>
+        <circle class="prog" id="prog" cx="120" cy="120" r="110"/>
+      </svg>
+      <div class="time"><div><b id="reloj">25:00</b><small id="etiqueta">Sin tarea seleccionada</small></div></div>
+    </div>
+    <div class="controls">
+      <button class="btn primary" id="play">Empezar</button>
+      <button class="btn ghost" id="reset" title="Reiniciar (R)">↺</button>
+      <button class="btn ghost" id="saltar" title="Saltar">⏭</button>
+    </div>
+    <p class="stats">Pomodoros hoy: <b id="hoy">0</b></p>
+    <p class="hint">Espacio: iniciar/pausar · R: reiniciar</p>
+  </section>
+
+  <section class="card">
+    <form id="form">
+      <input id="nueva" placeholder="¿En qué vas a trabajar?" autocomplete="off">
+      <button class="btn">Añadir</button>
+    </form>
+    <ul id="lista"></ul>
+    <p class="vacio" id="vacio">Añade una tarea y haz clic en ella para enfocarte.</p>
+  </section>
+</main>
+
+<script>
+const DUR = { foco: 25 * 60, corto: 5 * 60, largo: 15 * 60 };
+const R = 110, CIRC = 2 * Math.PI * R;
+const $ = id => document.getElementById(id);
+
+const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+
+let tareas = load('pomo.tareas', []);
+let activa = load('pomo.activa', null);
+let stats = load('pomo.stats', { fecha: '', n: 0 });
+const hoyStr = new Date().toDateString();
+if (stats.fecha !== hoyStr) stats = { fecha: hoyStr, n: 0 };
+
+let modo = 'foco', restante = DUR.foco, fin = null, tick = null, focosSeguidos = 0;
+
+const prog = $('prog');
+prog.style.strokeDasharray = CIRC;
+
+function fmt(s) { return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; }
+
+function pintarReloj() {
+  $('reloj').textContent = fmt(restante);
+  prog.style.strokeDashoffset = CIRC * (1 - restante / DUR[modo]);
+  document.title = (tick ? `${fmt(restante)} · ` : '') + 'Pomodoro + Tareas';
+  const t = tareas.find(t => t.id === activa);
+  $('etiqueta').textContent = modo !== 'foco' ? 'Descansa 🌿' : t ? t.texto : 'Sin tarea seleccionada';
+  $('play').textContent = tick ? 'Pausar' : (restante < DUR[modo] ? 'Continuar' : 'Empezar');
+  $('hoy').textContent = stats.n;
+}
+
+function setModo(m) {
+  pausar();
+  modo = m; restante = DUR[m];
+  document.body.classList.toggle('descanso', m !== 'foco');
+  document.querySelectorAll('.modes button').forEach(b => b.classList.toggle('on', b.dataset.modo === m));
+  pintarReloj();
+}
+
+function iniciar() {
+  if (tick) return;
+  if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+  fin = Date.now() + restante * 1000;
+  tick = setInterval(() => {
+    restante = Math.max(0, Math.round((fin - Date.now()) / 1000));
+    if (restante === 0) terminar();
+    pintarReloj();
+  }, 250);
+  pintarReloj();
+}
+
+function pausar() { clearInterval(tick); tick = null; pintarReloj(); }
+
+function terminar(saltado = false) {
+  pausar();
+  if (!saltado) sonar();
+  if (modo === 'foco') {
+    if (!saltado) {
+      stats.n++; save('pomo.stats', stats);
+      const t = tareas.find(t => t.id === activa);
+      if (t) { t.poms = (t.poms || 0) + 1; guardarTareas(); }
+      focosSeguidos++;
+      avisar('¡Pomodoro completado! Toca descansar.');
+    }
+    setModo(focosSeguidos > 0 && focosSeguidos % 4 === 0 ? 'largo' : 'corto');
+  } else {
+    if (!saltado) avisar('Fin del descanso. ¡A por otro!');
+    setModo('foco');
+  }
+}
+
+function sonar() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.25, 0.5].forEach((t, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = [660, 880, 990][i];
+      g.gain.setValueAtTime(0.25, ctx.currentTime + t);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.4);
+      o.connect(g).connect(ctx.destination);
+      o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.4);
+    });
+  } catch {}
+}
+
+function avisar(msg) {
+  if ('Notification' in window && Notification.permission === 'granted') new Notification('Pomodoro', { body: msg });
+}
+
+// --- Tareas ---
+function guardarTareas() { save('pomo.tareas', tareas); save('pomo.activa', activa); pintarTareas(); }
+
+function pintarTareas() {
+  const ul = $('lista');
+  ul.innerHTML = '';
+  tareas.forEach(t => {
+    const li = document.createElement('li');
+    li.className = (t.hecha ? 'hecha ' : '') + (t.id === activa ? 'activa' : '');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = t.hecha;
+    cb.onclick = e => { e.stopPropagation(); t.hecha = cb.checked; if (t.hecha && activa === t.id) activa = null; guardarTareas(); pintarReloj(); };
+    const span = document.createElement('span'); span.textContent = t.texto;
+    const poms = document.createElement('small'); poms.className = 'poms'; poms.textContent = t.poms ? '🍅'.repeat(Math.min(t.poms, 6)) + (t.poms > 6 ? ` ×${t.poms}` : '') : '';
+    const del = document.createElement('button'); del.className = 'del'; del.textContent = '×'; del.title = 'Eliminar';
+    del.onclick = e => { e.stopPropagation(); tareas = tareas.filter(x => x.id !== t.id); if (activa === t.id) activa = null; guardarTareas(); pintarReloj(); };
+    li.onclick = () => { if (t.hecha) return; activa = activa === t.id ? null : t.id; guardarTareas(); pintarReloj(); };
+    li.append(cb, span, poms, del);
+    ul.append(li);
+  });
+  $('vacio').style.display = tareas.length ? 'none' : 'block';
+}
+
+$('form').onsubmit = e => {
+  e.preventDefault();
+  const texto = $('nueva').value.trim();
+  if (!texto) return;
+  const t = { id: Date.now(), texto, hecha: false, poms: 0 };
+  tareas.push(t);
+  if (!activa) activa = t.id;
+  $('nueva').value = '';
+  guardarTareas(); pintarReloj();
+};
+
+// --- Controles ---
+$('play').onclick = () => tick ? pausar() : iniciar();
+$('reset').onclick = () => setModo(modo);
+$('saltar').onclick = () => { restante = 0; terminar(true); };
+document.querySelectorAll('.modes button').forEach(b => b.onclick = () => setModo(b.dataset.modo));
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.code === 'Space') { e.preventDefault(); tick ? pausar() : iniciar(); }
+  if (e.key === 'r' || e.key === 'R') setModo(modo);
+});
+
+pintarTareas();
+pintarReloj();
+</script>
+</body>
+</html>
